@@ -8,6 +8,16 @@ const outfit = Outfit({
 export const metadata = {
   title: "Private Space",
   description: "A secure, private chat application",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Our Space",
+  },
+};
+
+export const viewport = {
+  themeColor: "#2563eb",
 };
 
 export default function RootLayout({ children }) {

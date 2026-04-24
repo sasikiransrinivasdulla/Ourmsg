@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { BookOpen, Coffee, Moon } from 'lucide-react';
+import InstallPrompt from '@/components/InstallPrompt';
 
 export default function Dashboard() {
   const cards = [
@@ -69,6 +70,7 @@ export default function Dashboard() {
         ))}
         </div>
       </div>
+      <InstallPrompt />
     </div>
   );
 }
