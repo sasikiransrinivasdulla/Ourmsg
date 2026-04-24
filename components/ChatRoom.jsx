@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, ArrowLeft, Loader2, LogOut, Smile } from 'lucide-react';
+import { Send, ArrowLeft, Loader2, LogOut, Smile, X } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -16,6 +16,7 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
   const [typingUsers, setTypingUsers] = useState([]);
   const [otherUserState, setOtherUserState] = useState(null); // { username: string, lastSeen: number }
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [replyMessage, setReplyMessage] = useState(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   
@@ -279,6 +280,14 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
 
     try {
       const payload = { room, sender: me, message: tempMsg };
+      if (replyMessage) {
+        payload.replyTo = {
+          messageId: replyMessage._id,
+          sender: replyMessage.sender,
+          text: replyMessage.message
+        };
+      }
+      
       console.log('Sending message:', payload);
       
       const res = await fetch('/api/messages', {
@@ -292,6 +301,7 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
       const jsonRes = await res.json();
       console.log('Message sent response:', jsonRes);
       
+      setReplyMessage(null); // Clear reply preview on success
       fetchMessages();
     } catch (error) {
       console.error('Send error:', error);
@@ -416,6 +426,7 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
               return (
                 <div 
                   key={msg._id || i} 
+                  id={`msg-${msg._id}`}
                   className={clsx(
                     "flex w-full page-transition-enter transition-all duration-300", 
                     isMe ? "justify-end" : "justify-start",
@@ -426,25 +437,49 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
                     "max-w-[85%] md:max-w-[70%] flex flex-col",
                     isMe ? "items-end" : "items-start"
                   )}>
-                    <div className={clsx(
-                      "px-4 md:px-5 py-2.5 md:py-3 relative group transition-transform hover:scale-[1.01] hover:shadow-md",
-                      isMe 
-                        ? isNaughty 
-                          ? "bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-sm" 
-                          : "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-sm"
-                        : isNaughty
-                          ? "bg-slate-800/90 text-rose-50 border border-slate-700/50 shadow-sm"
-                          : "bg-white text-slate-800 border border-slate-100 shadow-sm",
-                      // Smart Border Radius for grouping (WhatsApp style)
-                      "rounded-2xl",
-                      isMe && isNextSame ? "rounded-br-sm" : "",
-                      isMe && isPrevSame ? "rounded-tr-sm" : "",
-                      !isMe && isNextSame ? "rounded-bl-sm" : "",
-                      !isMe && isPrevSame ? "rounded-tl-sm" : "",
-                      // Tail styling on the last message of a group
-                      isMe && !isNextSame ? "chat-tail-right" : "",
-                      !isMe && !isNextSame ? "chat-tail-left" : ""
-                    )}>
+                    <div 
+                      onClick={() => setReplyMessage(msg)}
+                      className={clsx(
+                        "px-4 md:px-5 py-2.5 md:py-3 relative group transition-transform hover:scale-[1.01] hover:shadow-md cursor-pointer",
+                        isMe 
+                          ? isNaughty 
+                            ? "bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-sm" 
+                            : "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-sm"
+                          : isNaughty
+                            ? "bg-slate-800/90 text-rose-50 border border-slate-700/50 shadow-sm"
+                            : "bg-white text-slate-800 border border-slate-100 shadow-sm",
+                        // Smart Border Radius for grouping (WhatsApp style)
+                        "rounded-2xl",
+                        isMe && isNextSame ? "rounded-br-sm" : "",
+                        isMe && isPrevSame ? "rounded-tr-sm" : "",
+                        !isMe && isNextSame ? "rounded-bl-sm" : "",
+                        !isMe && isPrevSame ? "rounded-tl-sm" : "",
+                        // Tail styling on the last message of a group
+                        isMe && !isNextSame ? "chat-tail-right" : "",
+                        !isMe && !isNextSame ? "chat-tail-left" : ""
+                      )}
+                    >
+                      {/* Quoted Reply Block */}
+                      {msg.replyTo && (
+                        <div 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            document.getElementById(`msg-${msg.replyTo.messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          }}
+                          className={clsx(
+                            "mb-2 p-2 rounded-lg text-sm border-l-4 transition-opacity hover:opacity-80",
+                            isMe 
+                              ? "bg-black/10 border-white/50 text-white/90" 
+                              : isNaughty
+                                ? "bg-slate-900/50 border-slate-600 text-slate-300"
+                                : "bg-slate-100 border-slate-300 text-slate-600"
+                          )}
+                        >
+                          <span className="font-bold text-[11px] block mb-0.5 opacity-90">{msg.replyTo.sender === me ? 'You' : msg.replyTo.sender}</span>
+                          <span className="block truncate opacity-80 max-w-full text-xs">{msg.replyTo.text}</span>
+                        </div>
+                      )}
+
                       <p className="leading-relaxed break-words whitespace-pre-wrap text-[15px]">{msg.message}</p>
                       <span className={clsx(
                         "text-[10px] absolute -bottom-5 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap",
@@ -474,6 +509,31 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
         {typingUsers.filter(u => u !== me).length > 0 && (
           <div className="absolute -top-7 left-1/2 -translate-x-1/2 text-[11px] font-medium tracking-wide bg-black/5 backdrop-blur-md px-3 py-1 rounded-full italic text-slate-500 animate-pulse page-transition-enter shadow-sm">
             {typingUsers.filter(u => u !== me).join(', ')} is typing...
+          </div>
+        )}
+        
+        {/* Reply Preview Box */}
+        {replyMessage && (
+          <div className="max-w-3xl mx-auto w-full mb-3 px-2 page-transition-enter">
+            <div className={clsx(
+              "p-3 rounded-2xl flex items-start justify-between border shadow-sm backdrop-blur-md",
+              isNaughty ? "bg-slate-800/90 border-slate-700" : "bg-white/90 border-slate-100"
+            )}>
+              <div className="flex flex-col overflow-hidden border-l-4 border-blue-400 pl-2">
+                <span className={clsx("text-xs font-bold mb-0.5", isNaughty ? "text-rose-400" : "text-blue-500")}>
+                  Replying to {replyMessage.sender === me ? 'yourself' : replyMessage.sender}
+                </span>
+                <span className={clsx("text-sm truncate opacity-80", isNaughty ? "text-slate-300" : "text-slate-600")}>
+                  {replyMessage.message}
+                </span>
+              </div>
+              <button 
+                onClick={() => setReplyMessage(null)}
+                className="p-1 hover:bg-black/5 rounded-full transition-colors ml-2 flex-none text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         )}
         

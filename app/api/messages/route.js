@@ -58,7 +58,7 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { room, message } = body;
+    const { room, message, replyTo } = body;
 
     if (!room || !message) {
       return NextResponse.json({ error: 'Room and message are required' }, { status: 400 });
@@ -70,6 +70,7 @@ export async function POST(request) {
       room,
       sender: user.username,
       message,
+      ...(replyTo && { replyTo })
     });
 
     return NextResponse.json({ message: newMessage }, { status: 201 });

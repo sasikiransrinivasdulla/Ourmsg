@@ -18,6 +18,11 @@ const MessageSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  replyTo: {
+    messageId: { type: String },
+    sender: { type: String },
+    text: { type: String }
+  }
 });
 
 export default mongoose.models.Message || mongoose.model('Message', MessageSchema);
