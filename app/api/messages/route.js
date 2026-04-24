@@ -3,6 +3,8 @@ import dbConnect from '@/lib/mongodb';
 import Message from '@/models/Message';
 import { verifyJwtToken } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 // Helper to authenticate API requests
 async function authUser(request) {
   const token = request.cookies.get('session_token')?.value;

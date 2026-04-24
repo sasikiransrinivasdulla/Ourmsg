@@ -79,15 +79,17 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
 
   const fetchMessages = async (currentMessages = messages) => {
     try {
+      console.log(`[${new Date().toISOString()}] Polling /api/messages...`);
       const [res, typingRes, onlineRes] = await Promise.all([
-        fetch(`/api/messages?room=${room}`),
-        fetch(`/api/typing?room=${room}`),
-        fetch(`/api/online`)
+        fetch(`/api/messages?room=${room}`, { cache: 'no-store' }),
+        fetch(`/api/typing?room=${room}`, { cache: 'no-store' }),
+        fetch(`/api/online`, { cache: 'no-store' })
       ]);
 
-      if (!res.ok) throw new Error('API failed');
+      if (!res.ok) throw new Error(`API failed with status: ${res.status}`);
       
       const data = await res.json();
+      console.log(`[${new Date().toISOString()}] Received ${data.messages?.length || 0} messages from API.`);
       
       if (typingRes.ok) {
         const typingData = await typingRes.json();
@@ -118,6 +120,7 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
         const latestNew = data.messages.length > 0 ? data.messages[data.messages.length - 1] : null;
 
         if (!latestCurrent || !latestNew || latestCurrent._id !== latestNew._id || currentMessages.length !== data.messages.length) {
+          console.log("State difference detected! Updating message state.");
           setMessages(data.messages);
           
           // Check if the new message is from someone else to trigger notification
@@ -151,7 +154,7 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
 
   useEffect(() => {
     fetchMessages(messages);
-    const interval = setInterval(() => fetchMessages(messages), 3000); // Poll every 3 seconds
+    const interval = setInterval(() => fetchMessages(messages), 2000); // Poll every 2 seconds
     return () => clearInterval(interval);
   }, [room, messages, me]);
 
