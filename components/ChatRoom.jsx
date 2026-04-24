@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, ArrowLeft, Loader2, LogOut } from 'lucide-react';
+import { Send, ArrowLeft, Loader2, LogOut, Smile } from 'lucide-react';
+import EmojiPicker from 'emoji-picker-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import clsx from 'clsx';
@@ -14,8 +15,10 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
   const [me, setMe] = useState(null);
   const [typingUsers, setTypingUsers] = useState([]);
   const [otherUserState, setOtherUserState] = useState(null); // { username: string, lastSeen: number }
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const emojiPickerRef = useRef(null);
   const router = useRouter();
 
   // Notification and SW setup
@@ -29,6 +32,16 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
         console.error('Service Worker registration failed:', err);
       });
     }
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const playNotificationSound = () => {
@@ -195,6 +208,10 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
     }, 1000);
   };
 
+  const onEmojiClick = (emojiObject) => {
+    setNewMessage(prev => prev + emojiObject.emoji);
+  };
+
   const handleSend = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || sending) return;
@@ -344,7 +361,32 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
           </div>
         )}
         
-        <form onSubmit={handleSend} className="max-w-4xl mx-auto relative flex items-end gap-3">
+        <form onSubmit={handleSend} className="max-w-4xl mx-auto relative flex items-end gap-2 md:gap-3">
+          
+          {/* Emoji Picker Popup */}
+          {showEmojiPicker && (
+            <div ref={emojiPickerRef} className="absolute bottom-[65px] left-0 z-50 shadow-2xl rounded-2xl overflow-hidden page-transition-enter">
+              <EmojiPicker 
+                onEmojiClick={onEmojiClick} 
+                theme={isNaughty ? "dark" : "light"}
+                lazyLoadEmojis={true}
+              />
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            className={clsx(
+              "flex-none h-[52px] w-[52px] rounded-2xl flex items-center justify-center transition-all group shadow-sm",
+              isNaughty 
+                ? "bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-rose-400 border border-slate-700" 
+                : "bg-white hover:bg-slate-100 text-slate-400 hover:text-blue-500 border border-slate-200"
+            )}
+          >
+            <Smile className="w-6 h-6 group-hover:scale-110 transition-transform" />
+          </button>
+
           <textarea
             value={newMessage}
             onChange={handleTyping}
