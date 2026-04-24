@@ -12,18 +12,33 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [me, setMe] = useState(null);
-  const scrollRef = useRef(null);
+  const messagesEndRef = useRef(null);
   const router = useRouter();
 
-  // Fetch who am I (simple hack by reading my session or trusting the server)
-  // Actually, we can determine "me" by looking at the first message I send or decode token.
-  // We'll decode it via an initial API call or just parse cookie? We can't parse HttpOnly cookie.
-  // Instead, the API returns the sender info. Let's add a simple endpoint to get current user,
-  // or we just trust the server response for messages. Wait, we need to know my username.
-  // Let's rely on localStorage or just a /api/auth/me endpoint.
-  // Wait, I forgot to create /api/auth/me! I will quickly fetch it from the messages if possible or create it.
-  // Actually, the easiest is to just see if sender == myUsername. 
-  // Let me update the component to fetch the current user first.
+  // Notification setup
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  const playNotificationSound = () => {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      oscillator.start();
+      gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.5);
+      oscillator.stop(audioCtx.currentTime + 0.5);
+    } catch (e) {
+      // Ignore if audio fails or is blocked
+    }
+  };
 
   useEffect(() => {
     // Quick hack to get current user from localStorage or just create a new endpoint?
@@ -39,13 +54,28 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
       .catch(console.error);
   }, []);
 
-  const fetchMessages = async () => {
+  const fetchMessages = async (currentMessages = messages) => {
     try {
       const res = await fetch(`/api/messages?room=${room}`);
       if (!res.ok) throw new Error('API failed');
       const data = await res.json();
       if (data.messages) {
-        setMessages(data.messages);
+        // Optimized Polling: Check if we have new messages
+        const latestCurrent = currentMessages.length > 0 ? currentMessages[currentMessages.length - 1] : null;
+        const latestNew = data.messages.length > 0 ? data.messages[data.messages.length - 1] : null;
+
+        if (!latestCurrent || !latestNew || latestCurrent._id !== latestNew._id || currentMessages.length !== data.messages.length) {
+          setMessages(data.messages);
+          
+          // Check if the new message is from someone else to trigger notification
+          if (latestNew && latestCurrent && latestNew.sender !== me && latestNew._id !== latestCurrent._id) {
+            playNotificationSound();
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification(`New message in ${title}`, { body: latestNew.message });
+            }
+            document.title = '(1) New Message - Our Space';
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to fetch messages:', error);
@@ -55,16 +85,27 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
   };
 
   useEffect(() => {
-    fetchMessages();
-    const interval = setInterval(fetchMessages, 3000); // Poll every 3 seconds
+    fetchMessages(messages);
+    const interval = setInterval(() => fetchMessages(messages), 3000); // Poll every 3 seconds
     return () => clearInterval(interval);
-  }, [room]);
+  }, [room, messages, me]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    // Reset title on focus
+    const handleFocus = () => {
+      document.title = 'Our Space';
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
 
   const handleSend = async (e) => {
     e.preventDefault();
@@ -99,7 +140,7 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
 
   return (
     <div className={clsx(
-      "min-h-screen flex flex-col transition-colors duration-500 page-transition-enter",
+      "h-[100dvh] w-full flex flex-col overflow-hidden transition-colors duration-500 page-transition-enter",
       isNaughty ? "bg-[#0f172a]" : "bg-slate-50"
     )}>
       {/* Background gradient/blur effect */}
@@ -110,8 +151,8 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
 
       {/* Header */}
       <header className={clsx(
-        "flex-none h-16 px-4 md:px-8 border-b flex items-center justify-between sticky top-0 z-10 backdrop-blur-xl shadow-sm",
-        isNaughty ? "bg-[#0f172a]/70 border-slate-800 text-rose-100" : "bg-white/70 border-slate-200 text-slate-800"
+        "flex-none h-16 px-4 md:px-8 border-b flex items-center justify-between sticky top-0 z-50 backdrop-blur-xl shadow-sm",
+        isNaughty ? "bg-[#0f172a]/80 border-slate-800 text-rose-100" : "bg-white/80 border-slate-200 text-slate-800"
       )}>
         <div className="flex items-center gap-4">
           <Link href={backLink} className={clsx(
@@ -132,10 +173,7 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
       </header>
 
       {/* Messages Area */}
-      <div 
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 no-scrollbar relative z-10"
-      >
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 no-scrollbar relative z-10">
         {loading && messages.length === 0 ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
             <Loader2 className={clsx("w-8 h-8 animate-spin", isNaughty ? "text-rose-500" : "text-blue-500")} />
@@ -155,7 +193,7 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
             return (
               <div 
                 key={msg._id || i} 
-                className={clsx("flex w-full", isMe ? "justify-end" : "justify-start")}
+                className={clsx("flex w-full page-transition-enter", isMe ? "justify-end" : "justify-start")}
               >
                 <div className={clsx(
                   "max-w-[80%] md:max-w-[60%] flex flex-col",
@@ -184,6 +222,8 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
             );
           })
         )}
+        {/* Invisible div for smooth scrolling */}
+        <div ref={messagesEndRef} className="h-1 w-full" />
       </div>
 
       {/* Input Area */}
