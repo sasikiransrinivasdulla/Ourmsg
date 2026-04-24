@@ -13,14 +13,21 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
   const [sending, setSending] = useState(false);
   const [me, setMe] = useState(null);
   const [typingUsers, setTypingUsers] = useState([]);
+  const [otherUserState, setOtherUserState] = useState(null); // { username: string, lastSeen: number }
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const router = useRouter();
 
-  // Notification setup
+  // Notification and SW setup
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
+    }
+    
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(err => {
+        console.error('Service Worker registration failed:', err);
+      });
     }
   }, []);
 
@@ -58,9 +65,10 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
 
   const fetchMessages = async (currentMessages = messages) => {
     try {
-      const [res, typingRes] = await Promise.all([
+      const [res, typingRes, onlineRes] = await Promise.all([
         fetch(`/api/messages?room=${room}`),
-        fetch(`/api/typing?room=${room}`)
+        fetch(`/api/typing?room=${room}`),
+        fetch(`/api/online`)
       ]);
 
       if (!res.ok) throw new Error('API failed');
@@ -73,6 +81,23 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
           setTypingUsers(typingData.typing);
         }
       }
+
+      if (onlineRes.ok) {
+        const onlineData = await onlineRes.json();
+        if (onlineData.onlineState && me) {
+          // Find the other user from the online state map
+          const others = Object.entries(onlineData.onlineState).filter(([u]) => u !== me);
+          if (others.length > 0) {
+            setOtherUserState({ username: others[0][0], lastSeen: others[0][1] });
+          } else {
+             // If they aren't in the online state map, try to infer from messages
+             const otherMsg = data.messages?.find(m => m.sender !== me);
+             if (otherMsg) {
+               setOtherUserState(prev => prev ? prev : { username: otherMsg.sender, lastSeen: 0 });
+             }
+          }
+        }
+      }
       if (data.messages) {
         // Optimized Polling: Check if we have new messages
         const latestCurrent = currentMessages.length > 0 ? currentMessages[currentMessages.length - 1] : null;
@@ -83,11 +108,23 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
           
           // Check if the new message is from someone else to trigger notification
           if (latestNew && latestCurrent && latestNew.sender !== me && latestNew._id !== latestCurrent._id) {
-            playNotificationSound();
-            if ('Notification' in window && Notification.permission === 'granted') {
-              new Notification(`New message in ${title}`, { body: latestNew.message });
+            
+            // Only play sound or show notification if tab is hidden/inactive to avoid spamming active users
+            if (document.hidden) {
+              playNotificationSound();
+              
+              if ('serviceWorker' in navigator && Notification.permission === 'granted') {
+                navigator.serviceWorker.ready.then(registration => {
+                  registration.showNotification(`New message from ${latestNew.sender}`, {
+                    body: latestNew.message,
+                    vibrate: [200, 100, 200]
+                  });
+                });
+              } else if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(`New message from ${latestNew.sender}`, { body: latestNew.message });
+              }
+              document.title = '(1) New Message - Our Space';
             }
-            document.title = '(1) New Message - Our Space';
           }
         }
       }
@@ -103,6 +140,17 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
     const interval = setInterval(() => fetchMessages(messages), 3000); // Poll every 3 seconds
     return () => clearInterval(interval);
   }, [room, messages, me]);
+
+  // Heartbeat
+  useEffect(() => {
+    if (!me) return;
+    const sendHeartbeat = () => {
+      fetch('/api/online', { method: 'POST' }).catch(console.error);
+    };
+    sendHeartbeat(); // immediate
+    const interval = setInterval(sendHeartbeat, 5000); // Every 5 seconds
+    return () => clearInterval(interval);
+  }, [me]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -204,7 +252,22 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
           )}>
             <ArrowLeft className="w-5 h-5" />
           </Link>
-          <h1 className="text-xl font-medium tracking-tight">{title}</h1>
+          <div className="flex flex-col">
+            <h1 className="text-xl font-medium tracking-tight leading-tight">{title}</h1>
+            {otherUserState && (
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className={clsx(
+                  "w-2 h-2 rounded-full",
+                  Date.now() - otherUserState.lastSeen < 10000 ? "bg-green-500 animate-pulse" : "bg-slate-400"
+                )}></span>
+                <span className="text-[10px] text-slate-500 font-medium">
+                  {Date.now() - otherUserState.lastSeen < 10000 
+                    ? `${otherUserState.username} is Online` 
+                    : `Last seen ${Math.floor((Date.now() - otherUserState.lastSeen) / 1000)}s ago`}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
         <button 
           onClick={handleLogout}
