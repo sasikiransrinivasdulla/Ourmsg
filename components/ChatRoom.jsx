@@ -253,14 +253,23 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
     )}>
       {/* Background gradient/blur effect */}
       <div className={clsx(
-        "fixed inset-0 z-0 opacity-40 pointer-events-none transition-colors duration-1000",
-        isNaughty ? "bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-[#0f172a] to-[#0f172a]" : "bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-100 via-slate-50 to-white"
-      )}></div>
+        "fixed inset-0 z-0 pointer-events-none transition-colors duration-1000",
+        isNaughty 
+          ? "bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-[#0f172a] to-[#0f172a] opacity-40" 
+          : "bg-gradient-to-br from-blue-50 via-white to-blue-100 opacity-80"
+      )}>
+        {!isNaughty && (
+          <>
+            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-400 rounded-full mix-blend-multiply filter blur-[100px] opacity-20 animate-pulse"></div>
+            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-400 rounded-full mix-blend-multiply filter blur-[100px] opacity-20 animate-pulse" style={{ animationDelay: '2s' }}></div>
+          </>
+        )}
+      </div>
 
       {/* Header */}
       <header className={clsx(
-        "flex-none h-16 px-4 md:px-8 border-b flex items-center justify-between sticky top-0 z-50 backdrop-blur-xl shadow-sm",
-        isNaughty ? "bg-[#0f172a]/80 border-slate-800 text-rose-100" : "bg-white/80 border-slate-200 text-slate-800"
+        "flex-none h-[72px] px-4 md:px-6 border-b flex items-center justify-between sticky top-0 z-50 transition-all shadow-sm",
+        isNaughty ? "bg-[#0f172a]/80 backdrop-blur-xl border-slate-800 text-rose-100" : "bg-white/80 backdrop-blur-xl border-white/50 text-slate-800 shadow-[0_4px_30px_rgba(0,0,0,0.03)]"
       )}>
         <div className="flex items-center gap-4">
           <Link href={backLink} className={clsx(
@@ -296,76 +305,97 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
       </header>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 no-scrollbar relative z-10">
-        {loading && messages.length === 0 ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-            <Loader2 className={clsx("w-8 h-8 animate-spin", isNaughty ? "text-rose-500" : "text-blue-500")} />
-            <span className="text-sm text-slate-500 animate-pulse">Loading messages...</span>
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-3">
-            <p className="text-lg">No messages yet.</p>
-            <p className="text-sm text-slate-400">Be the first to say hi!</p>
-          </div>
-        ) : (
-          messages.map((msg, i) => {
-            const isMe = msg.sender === me;
-            const msgDate = new Date(msg.timestamp);
-            const timeString = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 no-scrollbar relative z-10 w-full flex flex-col items-center">
+        <div className="w-full max-w-3xl flex flex-col">
+          {loading && messages.length === 0 ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
+              <Loader2 className={clsx("w-8 h-8 animate-spin", isNaughty ? "text-rose-500" : "text-blue-500")} />
+              <span className="text-sm text-slate-500 animate-pulse">Loading messages...</span>
+            </div>
+          ) : messages.length === 0 ? (
+            <div className="h-full mt-32 flex flex-col items-center justify-center text-slate-500 gap-3">
+              <p className="text-lg">No messages yet.</p>
+              <p className="text-sm text-slate-400">Be the first to say hi!</p>
+            </div>
+          ) : (
+            messages.map((msg, i) => {
+              const isMe = msg.sender === me;
+              const msgDate = new Date(msg.timestamp);
+              const timeString = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              
+              // Group messages logically to reduce vertical spacing
+              const isPrevSame = i > 0 && messages[i-1].sender === msg.sender;
+              const isNextSame = i < messages.length - 1 && messages[i+1].sender === msg.sender;
 
-            return (
-              <div 
-                key={msg._id || i} 
-                className={clsx("flex w-full page-transition-enter", isMe ? "justify-end" : "justify-start")}
-              >
-                <div className={clsx(
-                  "max-w-[80%] md:max-w-[60%] flex flex-col",
-                  isMe ? "items-end" : "items-start"
-                )}>
+              return (
+                <div 
+                  key={msg._id || i} 
+                  className={clsx(
+                    "flex w-full page-transition-enter transition-all duration-300", 
+                    isMe ? "justify-end" : "justify-start",
+                    isPrevSame ? "mt-1.5" : "mt-6"
+                  )}
+                >
                   <div className={clsx(
-                    "px-5 py-3 relative group backdrop-blur-md shadow-sm transition-transform hover:scale-[1.01]",
-                    isMe 
-                      ? isNaughty 
-                        ? "bg-rose-600/90 text-white rounded-2xl rounded-br-none chat-tail-right" 
-                        : "bg-blue-600/90 text-white rounded-2xl rounded-br-none chat-tail-right"
-                      : isNaughty
-                        ? "bg-slate-800/90 text-rose-50 rounded-2xl rounded-bl-none border border-slate-700/50 chat-tail-left"
-                        : "bg-white/90 text-slate-800 rounded-2xl rounded-bl-none border border-slate-200 chat-tail-left"
+                    "max-w-[85%] md:max-w-[70%] flex flex-col",
+                    isMe ? "items-end" : "items-start"
                   )}>
-                    <p className="leading-relaxed break-words whitespace-pre-wrap">{msg.message}</p>
-                    <span className={clsx(
-                      "text-[10px] absolute -bottom-5 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap",
-                      isMe ? "right-1 text-slate-400" : "left-1 text-slate-400"
+                    <div className={clsx(
+                      "px-4 md:px-5 py-2.5 md:py-3 relative group transition-transform hover:scale-[1.01] hover:shadow-md",
+                      isMe 
+                        ? isNaughty 
+                          ? "bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-sm" 
+                          : "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-sm"
+                        : isNaughty
+                          ? "bg-slate-800/90 text-rose-50 border border-slate-700/50 shadow-sm"
+                          : "bg-white text-slate-800 border border-slate-100 shadow-sm",
+                      // Smart Border Radius for grouping (WhatsApp style)
+                      "rounded-2xl",
+                      isMe && isNextSame ? "rounded-br-sm" : "",
+                      isMe && isPrevSame ? "rounded-tr-sm" : "",
+                      !isMe && isNextSame ? "rounded-bl-sm" : "",
+                      !isMe && isPrevSame ? "rounded-tl-sm" : "",
+                      // Tail styling on the last message of a group
+                      isMe && !isNextSame ? "chat-tail-right" : "",
+                      !isMe && !isNextSame ? "chat-tail-left" : ""
                     )}>
-                      {timeString}
-                    </span>
+                      <p className="leading-relaxed break-words whitespace-pre-wrap text-[15px]">{msg.message}</p>
+                      <span className={clsx(
+                        "text-[10px] absolute -bottom-5 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap",
+                        isMe ? "right-1 text-slate-400" : "left-1 text-slate-400"
+                      )}>
+                        {timeString}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })
-        )}
-        {/* Invisible div for smooth scrolling */}
-        <div ref={messagesEndRef} className="h-1 w-full" />
+              );
+            })
+          )}
+          {/* Invisible div for smooth scrolling */}
+          <div ref={messagesEndRef} className="h-1 w-full mt-4" />
+        </div>
       </div>
 
       {/* Input Area */}
       <div className={clsx(
-        "flex-none p-4 md:p-6 border-t relative",
-        isNaughty ? "bg-[#0f172a] border-slate-800" : "bg-white border-slate-200"
+        "flex-none p-3 md:p-5 relative z-20 transition-all",
+        isNaughty 
+          ? "bg-[#0f172a]/80 backdrop-blur-2xl border-t border-slate-800" 
+          : "bg-white/70 backdrop-blur-2xl border-t border-white/50 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.05)]"
       )}>
         {/* Typing Indicator */}
         {typingUsers.filter(u => u !== me).length > 0 && (
-          <div className="absolute -top-7 left-6 text-xs italic text-slate-500 animate-pulse page-transition-enter">
+          <div className="absolute -top-7 left-1/2 -translate-x-1/2 text-[11px] font-medium tracking-wide bg-black/5 backdrop-blur-md px-3 py-1 rounded-full italic text-slate-500 animate-pulse page-transition-enter shadow-sm">
             {typingUsers.filter(u => u !== me).join(', ')} is typing...
           </div>
         )}
         
-        <form onSubmit={handleSend} className="max-w-4xl mx-auto relative flex items-end gap-2 md:gap-3">
+        <form onSubmit={handleSend} className="max-w-3xl mx-auto w-full relative flex items-end gap-2 md:gap-3">
           
           {/* Emoji Picker Popup */}
           {showEmojiPicker && (
-            <div ref={emojiPickerRef} className="absolute bottom-[65px] left-0 z-50 shadow-2xl rounded-2xl overflow-hidden page-transition-enter">
+            <div ref={emojiPickerRef} className="absolute bottom-[70px] left-0 md:-left-4 z-50 shadow-2xl rounded-3xl overflow-hidden page-transition-enter ring-1 ring-black/5">
               <EmojiPicker 
                 onEmojiClick={onEmojiClick} 
                 theme={isNaughty ? "dark" : "light"}
@@ -378,13 +408,13 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
             type="button"
             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
             className={clsx(
-              "flex-none h-[52px] w-[52px] rounded-2xl flex items-center justify-center transition-all group shadow-sm",
+              "flex-none h-[48px] w-[48px] md:h-[52px] md:w-[52px] rounded-full flex items-center justify-center transition-all group shadow-sm",
               isNaughty 
                 ? "bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-rose-400 border border-slate-700" 
-                : "bg-white hover:bg-slate-100 text-slate-400 hover:text-blue-500 border border-slate-200"
+                : "bg-white hover:bg-slate-50 text-slate-400 hover:text-blue-500 border border-slate-100"
             )}
           >
-            <Smile className="w-6 h-6 group-hover:scale-110 transition-transform" />
+            <Smile className="w-[22px] h-[22px] md:w-6 md:h-6 group-hover:scale-110 transition-transform" />
           </button>
 
           <textarea
@@ -398,10 +428,10 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
             }}
             placeholder="Type a message..."
             className={clsx(
-              "flex-1 max-h-32 min-h-[52px] py-3.5 pl-5 pr-4 rounded-2xl resize-none outline-none transition-all shadow-sm",
+              "flex-1 max-h-32 min-h-[48px] md:min-h-[52px] py-3.5 pl-6 pr-4 rounded-full resize-none outline-none transition-all shadow-sm",
               isNaughty 
-                ? "bg-slate-800/80 backdrop-blur-md border border-slate-700 focus:border-rose-500/50 focus:ring-2 focus:ring-rose-500/20 focus:shadow-[0_0_15px_rgba(225,29,72,0.15)] text-rose-50 placeholder:text-slate-500" 
-                : "bg-slate-50/80 backdrop-blur-md border border-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/10 focus:shadow-[0_0_15px_rgba(59,130,246,0.1)] text-slate-800 placeholder:text-slate-400"
+                ? "bg-slate-800/60 backdrop-blur-md border border-slate-700 focus:border-rose-500/50 focus:ring-4 focus:ring-rose-500/10 focus:shadow-[0_0_20px_rgba(225,29,72,0.15)] text-rose-50 placeholder:text-slate-500" 
+                : "bg-white/80 backdrop-blur-md border border-slate-100 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 focus:shadow-[0_0_20px_rgba(59,130,246,0.1)] text-slate-800 placeholder:text-slate-400"
             )}
             rows={1}
           />
@@ -409,16 +439,16 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
             type="submit"
             disabled={!newMessage.trim() || sending}
             className={clsx(
-              "flex-none h-[52px] w-[52px] rounded-2xl flex items-center justify-center transition-all disabled:opacity-50 disabled:cursor-not-allowed group shadow-sm",
+              "flex-none h-[48px] w-[48px] md:h-[52px] md:w-[52px] rounded-full flex items-center justify-center transition-all disabled:opacity-50 disabled:cursor-not-allowed group shadow-sm hover:shadow-md",
               isNaughty 
-                ? "bg-rose-600 hover:bg-rose-500 text-white" 
-                : "bg-blue-600 hover:bg-blue-500 text-white"
+                ? "bg-gradient-to-br from-rose-500 to-rose-600 hover:to-rose-500 text-white shadow-rose-500/20" 
+                : "bg-gradient-to-br from-blue-500 to-blue-600 hover:to-blue-500 text-white shadow-blue-500/20"
             )}
           >
             {sending ? (
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
-              <Send className="w-5 h-5 group-hover:scale-110 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform" />
+              <Send className="w-[20px] h-[20px] md:w-5 md:h-5 group-hover:scale-110 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform" />
             )}
           </button>
         </form>
