@@ -21,6 +21,8 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const room = searchParams.get('room');
+    const skip = parseInt(searchParams.get('skip') || '0', 10);
+    const limit = parseInt(searchParams.get('limit') || '50', 10);
 
     if (!room) {
       return NextResponse.json({ error: 'Room is required' }, { status: 400 });
@@ -28,13 +30,20 @@ export async function GET(request) {
 
     await dbConnect();
     
-    // Fetch last 100 messages for the room, sorted by oldest first
-    const messages = await Message.find({ room })
-      .sort({ timestamp: 1 })
-      .limit(100)
+    // Fetch latest messages for the room, sorted by newest first for skip/limit
+    let messages = await Message.find({ room })
+      .sort({ timestamp: -1 })
+      .skip(skip)
+      .limit(limit)
       .lean();
 
-    return NextResponse.json({ messages });
+    // Reverse order to send oldest -> newest
+    messages = messages.reverse();
+    
+    const totalCount = await Message.countDocuments({ room });
+    const hasMore = totalCount > skip + messages.length;
+
+    return NextResponse.json({ messages, hasMore, totalCount });
   } catch (error) {
     console.error('Fetch messages error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

@@ -16,8 +16,13 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
   const [typingUsers, setTypingUsers] = useState([]);
   const [otherUserState, setOtherUserState] = useState(null); // { username: string, lastSeen: number }
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  
   const messagesEndRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const currentTotalCount = useRef(-1);
   const emojiPickerRef = useRef(null);
   const inputRef = useRef(null);
   const router = useRouter();
@@ -115,34 +120,45 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
         }
       }
       if (data.messages) {
-        // Optimized Polling: Check if we have new messages
-        const latestCurrent = currentMessages.length > 0 ? currentMessages[currentMessages.length - 1] : null;
-        const latestNew = data.messages.length > 0 ? data.messages[data.messages.length - 1] : null;
-
-        if (!latestCurrent || !latestNew || latestCurrent._id !== latestNew._id || currentMessages.length !== data.messages.length) {
+        if (data.totalCount !== currentTotalCount.current || currentMessages.length === 0) {
           console.log("State difference detected! Updating message state.");
-          setMessages(data.messages);
           
-          // Check if the new message is from someone else to trigger notification
-          if (latestNew && latestCurrent && latestNew.sender !== me && latestNew._id !== latestCurrent._id) {
+          if (currentMessages.length === 0) {
+            setMessages(data.messages);
+            setTimeout(scrollToBottom, 100);
+          } else {
+            const existingIds = new Set(currentMessages.map(m => m._id));
+            const newMessages = data.messages.filter(m => !existingIds.has(m._id));
             
-            // Only play sound or show notification if tab is hidden/inactive to avoid spamming active users
-            if (document.hidden) {
-              playNotificationSound();
+            if (newMessages.length > 0) {
+              setMessages(prev => [...prev, ...newMessages]);
+              setTimeout(scrollToBottom, 100);
               
-              if ('serviceWorker' in navigator && Notification.permission === 'granted') {
-                navigator.serviceWorker.ready.then(registration => {
-                  registration.showNotification(`New message from ${latestNew.sender}`, {
-                    body: latestNew.message,
-                    vibrate: [200, 100, 200]
-                  });
-                });
-              } else if ('Notification' in window && Notification.permission === 'granted') {
-                new Notification(`New message from ${latestNew.sender}`, { body: latestNew.message });
+              // Notification check for the very latest message
+              const latestNew = newMessages[newMessages.length - 1];
+              if (latestNew && latestNew.sender !== me) {
+                if (document.hidden) {
+                  playNotificationSound();
+                  if ('serviceWorker' in navigator && Notification.permission === 'granted') {
+                    navigator.serviceWorker.ready.then(registration => {
+                      registration.showNotification(`New message from ${latestNew.sender}`, {
+                        body: latestNew.message,
+                        vibrate: [200, 100, 200]
+                      });
+                    });
+                  } else if ('Notification' in window && Notification.permission === 'granted') {
+                    new Notification(`New message from ${latestNew.sender}`, { body: latestNew.message });
+                  }
+                  document.title = '(1) New Message - Our Space';
+                }
               }
-              document.title = '(1) New Message - Our Space';
+            } else if (data.totalCount < currentTotalCount.current) {
+              // Messages were deleted in DB, hard resync
+              setMessages(data.messages);
             }
           }
+          currentTotalCount.current = data.totalCount;
+          setHasMore(data.hasMore);
         }
       }
     } catch (error) {
@@ -173,9 +189,43 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  const handleLoadOlder = async () => {
+    if (loadingOlder || !hasMore) return;
+    setLoadingOlder(true);
+    
+    try {
+      console.log(`[${new Date().toISOString()}] Fetching older messages (skip: ${messages.length})...`);
+      const res = await fetch(`/api/messages?room=${room}&limit=50&skip=${messages.length}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error('Failed to load older messages');
+      
+      const data = await res.json();
+      console.log(`Loaded ${data.messages?.length || 0} older messages`);
+      
+      const scrollContainer = scrollContainerRef.current;
+      const oldScrollHeight = scrollContainer ? scrollContainer.scrollHeight : 0;
+      
+      setMessages(prev => {
+         const existingIds = new Set(prev.map(m => m._id));
+         const olderMessages = data.messages.filter(m => !existingIds.has(m._id));
+         return [...olderMessages, ...prev];
+      });
+      
+      setHasMore(data.hasMore);
+      
+      // Restore scroll position so UI doesn't jump to top
+      setTimeout(() => {
+        if (scrollContainer) {
+          const newScrollHeight = scrollContainer.scrollHeight;
+          scrollContainer.scrollTop = newScrollHeight - oldScrollHeight;
+        }
+      }, 0);
+      
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
 
   useEffect(() => {
     // Reset title on focus
@@ -319,8 +369,30 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
       </header>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 no-scrollbar relative z-10 w-full flex flex-col items-center">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-6 no-scrollbar relative z-10 w-full flex flex-col items-center">
         <div className="w-full max-w-3xl flex flex-col">
+          
+          {/* Load Older Messages Button */}
+          {hasMore && !loading && messages.length > 0 && (
+            <div className="flex justify-center mb-6 mt-2">
+              <button
+                onClick={handleLoadOlder}
+                disabled={loadingOlder}
+                className={clsx(
+                  "px-4 py-1.5 rounded-full text-xs font-medium transition-all shadow-sm",
+                  isNaughty 
+                    ? "bg-slate-800 text-slate-300 hover:text-white border border-slate-700"
+                    : "bg-white text-slate-500 hover:text-blue-600 border border-slate-200"
+                )}
+              >
+                {loadingOlder ? (
+                  <Loader2 className="w-4 h-4 animate-spin inline-block mr-1" />
+                ) : null}
+                {loadingOlder ? "Loading..." : "Load older messages"}
+              </button>
+            </div>
+          )}
+
           {loading && messages.length === 0 ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
               <Loader2 className={clsx("w-8 h-8 animate-spin", isNaughty ? "text-rose-500" : "text-blue-500")} />
