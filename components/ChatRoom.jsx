@@ -19,6 +19,7 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const emojiPickerRef = useRef(null);
+  const inputRef = useRef(null);
   const router = useRouter();
 
   // Notification and SW setup
@@ -224,18 +225,28 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
     sendTypingState(false);
 
     try {
+      const payload = { room, sender: me, message: tempMsg };
+      console.log('Sending message:', payload);
+      
       const res = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ room, message: tempMsg }),
+        body: JSON.stringify(payload),
       });
+      
       if (!res.ok) throw new Error('API failed');
+      
+      const jsonRes = await res.json();
+      console.log('Message sent response:', jsonRes);
+      
       fetchMessages();
     } catch (error) {
       console.error('Send error:', error);
       setNewMessage(tempMsg); // restore on error
     } finally {
       setSending(false);
+      // Keep input focused after sending
+      setTimeout(() => inputRef.current?.focus(), 0);
     }
   };
 
@@ -418,6 +429,7 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
           </button>
 
           <textarea
+            ref={inputRef}
             value={newMessage}
             onChange={handleTyping}
             onKeyDown={(e) => {
