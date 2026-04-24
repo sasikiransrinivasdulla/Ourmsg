@@ -12,7 +12,9 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [me, setMe] = useState(null);
+  const [typingUsers, setTypingUsers] = useState([]);
   const messagesEndRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
   const router = useRouter();
 
   // Notification setup
@@ -56,9 +58,21 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
 
   const fetchMessages = async (currentMessages = messages) => {
     try {
-      const res = await fetch(`/api/messages?room=${room}`);
+      const [res, typingRes] = await Promise.all([
+        fetch(`/api/messages?room=${room}`),
+        fetch(`/api/typing?room=${room}`)
+      ]);
+
       if (!res.ok) throw new Error('API failed');
+      
       const data = await res.json();
+      
+      if (typingRes.ok) {
+        const typingData = await typingRes.json();
+        if (typingData.typing) {
+          setTypingUsers(typingData.typing);
+        }
+      }
       if (data.messages) {
         // Optimized Polling: Check if we have new messages
         const latestCurrent = currentMessages.length > 0 ? currentMessages[currentMessages.length - 1] : null;
@@ -107,6 +121,32 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
     return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
+  const sendTypingState = async (isTyping) => {
+    try {
+      await fetch('/api/typing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ room, isTyping }),
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleTyping = (e) => {
+    setNewMessage(e.target.value);
+    
+    sendTypingState(true);
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    typingTimeoutRef.current = setTimeout(() => {
+      sendTypingState(false);
+    }, 1000);
+  };
+
   const handleSend = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || sending) return;
@@ -114,6 +154,9 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
     setSending(true);
     const tempMsg = newMessage;
     setNewMessage(''); // optimistic clear
+    
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    sendTypingState(false);
 
     try {
       const res = await fetch('/api/messages', {
@@ -228,13 +271,20 @@ export default function ChatRoom({ room, title, theme = 'default', backLink = '/
 
       {/* Input Area */}
       <div className={clsx(
-        "flex-none p-4 md:p-6 border-t",
+        "flex-none p-4 md:p-6 border-t relative",
         isNaughty ? "bg-[#0f172a] border-slate-800" : "bg-white border-slate-200"
       )}>
+        {/* Typing Indicator */}
+        {typingUsers.filter(u => u !== me).length > 0 && (
+          <div className="absolute -top-7 left-6 text-xs italic text-slate-500 animate-pulse page-transition-enter">
+            {typingUsers.filter(u => u !== me).join(', ')} is typing...
+          </div>
+        )}
+        
         <form onSubmit={handleSend} className="max-w-4xl mx-auto relative flex items-end gap-3">
           <textarea
             value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
+            onChange={handleTyping}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
